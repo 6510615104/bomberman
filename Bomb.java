@@ -27,13 +27,15 @@ public class Bomb extends Thread {
         for (int i = 1; i <= 2; i++) {
             int r = row - i;
             if (r < 0 || map[r][col] == '#') break;
+            if (r < 0 || map[r][col] == 'B') break;
             map[r][col] = '*';
         }
 
         // Explode DOWN
         for (int i = 1; i <= 2; i++) {
             int r = row + i;
-            if (r >= map.length || map[r][col] == '#') break;
+            if (r < 0 || map[r][col] == '#') break;
+            if (r < 0 || map[r][col] == 'B') break;
             map[r][col] = '*';
         }
 
@@ -41,6 +43,7 @@ public class Bomb extends Thread {
         for (int i = 1; i <= 2; i++) {
             int c = col - i;
             if (c < 0 || map[row][c] == '#') break;
+            if (c < 0 || map[row][c] == 'B') break;
             map[row][c] = '*';
         }
 
@@ -48,6 +51,7 @@ public class Bomb extends Thread {
         for (int i = 1; i <= 2; i++) {
             int c = col + i;
             if (c >= map[0].length || map[row][c] == '#') break;
+            if (c >= map[0].length || map[row][c] == 'B') break;
             map[row][c] = '*';
         }
 
