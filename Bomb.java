@@ -6,7 +6,7 @@ public class Bomb extends Thread {
     private final int col;
     private final GameGrid grid;
 
-    // ✅ Constructor that matches what you call in GameGrid
+    // Constructor that matches what you call in GameGrid
     public Bomb(char[][] map, int row, int col, GameGrid grid) {
         this.map = map;
         this.row = row;
@@ -84,6 +84,5 @@ public class Bomb extends Thread {
         if (col + 2 < map[0].length && map[row][col + 2] == '*') map[row][col + 2] = ' ';
 
         grid.repaint();
-
     }
 }
