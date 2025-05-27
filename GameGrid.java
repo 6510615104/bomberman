@@ -39,18 +39,49 @@ public class GameGrid extends JPanel {
         enemy.start();
         setPreferredSize(new Dimension(cols * cellSize, rows * cellSize));
 
-        playerImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/player.png").getImage();
-        bombImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/bomb.gif").getImage();
-        enemyImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/pontan.png").getImage();
+        playerImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/static/player.png").getImage();
+        bombImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/static/bomb.gif").getImage();
+        enemyImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/static/pontan.png").getImage();
+        activePowerUps = new ArrayList<>(); // เริ่มต้น List
+        initializeMap();
+        // เคลียร์พื้นที่รอบผู้เล่นหลังจากสร้างแผนที่
+        clearPlayerSpawnArea(player.getRow(), player.getCol(), 1); // เคลียร์ 3x3 รอบผู้เล่น
 
-         player = new Player(1, 1);
-
-
+        generateRandomBoxes(30);
         Enemy initialEnemy = new Enemy(map, 7, 3, this);
         initialEnemy.start();
         enemies.add(initialEnemy);
-
         startEnemySpawner();
+
+        setFocusable(true); // เพิ่มเพื่อให้รับ KeyEvent ได้
+        // ใช้ KeyListener สำหรับการจัดการสถานะการกด/ปล่อยปุ่ม
+        addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyPressed(java.awt.event.KeyEvent e) {
+                switch (e.getKeyCode()) {
+                    case KeyEvent.VK_UP -> player.setMovingUp(true);
+                    case KeyEvent.VK_DOWN -> player.setMovingDown(true);
+                    case KeyEvent.VK_LEFT -> player.setMovingLeft(true);
+                    case KeyEvent.VK_RIGHT -> player.setMovingRight(true);
+                    case KeyEvent.VK_SPACE -> placeBomb();
+                }
+            }
+
+            @Override
+            public void keyReleased(java.awt.event.KeyEvent e) {
+                switch (e.getKeyCode()) {
+                    case KeyEvent.VK_UP -> player.setMovingUp(false);
+                    case KeyEvent.VK_DOWN -> player.setMovingDown(false);
+                    case KeyEvent.VK_LEFT -> player.setMovingLeft(false);
+                    case KeyEvent.VK_RIGHT -> player.setMovingRight(false);
+                }
+            }
+        });
+
+        // *** สร้างและเริ่ม Game Timer ***
+        gameTimer = new Timer(1000 / FRAME_RATE, e -> updateGame()); // Timer จะเรียก updateGame() ทุกๆ 1/FRAME_RATE //
+                                                                     // วินาที
+        gameTimer.start();
     }
 
     private void startEnemySpawner() {
@@ -78,43 +109,7 @@ public class GameGrid extends JPanel {
                 }
             }
         }).start();
-
-        activePowerUps = new ArrayList<>(); // เริ่มต้น List
-        initializeMap();
-        // เคลียร์พื้นที่รอบผู้เล่นหลังจากสร้างแผนที่
-        clearPlayerSpawnArea(player.getRow(), player.getCol(), 1); // เคลียร์ 3x3 รอบผู้เล่น
-
-        generateRandomBoxes(30);
-
-        setFocusable(true); // เพิ่มเพื่อให้รับ KeyEvent ได้
         setFocusable(true);
-        // ใช้ KeyListener สำหรับการจัดการสถานะการกด/ปล่อยปุ่ม
-        addKeyListener(new java.awt.event.KeyAdapter() {
-            @Override
-            public void keyPressed(java.awt.event.KeyEvent e) {
-                switch (e.getKeyCode()) {
-                    case KeyEvent.VK_UP -> player.setMovingUp(true);
-                    case KeyEvent.VK_DOWN -> player.setMovingDown(true);
-                    case KeyEvent.VK_LEFT -> player.setMovingLeft(true);
-                    case KeyEvent.VK_RIGHT -> player.setMovingRight(true);
-                    case KeyEvent.VK_SPACE -> placeBomb();
-                }
-            }
-
-            @Override
-            public void keyReleased(java.awt.event.KeyEvent e) {
-                switch (e.getKeyCode()) {
-                    case KeyEvent.VK_UP -> player.setMovingUp(false);
-                    case KeyEvent.VK_DOWN -> player.setMovingDown(false);
-                    case KeyEvent.VK_LEFT -> player.setMovingLeft(false);
-                    case KeyEvent.VK_RIGHT -> player.setMovingRight(false);
-                }
-            }
-        });
-        // *** สร้างและเริ่ม Game Timer ***
-        gameTimer = new Timer(1000 / FRAME_RATE, e -> updateGame()); // Timer จะเรียก updateGame() ทุกๆ 1/FRAME_RATE
-                                                                     // วินาที
-        gameTimer.start();
     }
 
     // เมธอดหลักในการอัปเดตสถานะเกม
@@ -346,7 +341,8 @@ public class GameGrid extends JPanel {
             }
         }
     }
-        public Player getPlayer() {
+
+    public Player getPlayer() {
         return player;
     }
 
@@ -359,7 +355,7 @@ public class GameGrid extends JPanel {
     }
 
     public List<Enemy> getEnemies() {
-    return enemies;
-}
+        return enemies;
+    }
 
 }

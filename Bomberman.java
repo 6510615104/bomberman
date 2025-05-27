@@ -11,6 +11,5 @@ public class Bomberman {
         frame.pack();
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
-        
     }
 }

@@ -1,9 +1,5 @@
 package Bomberman;
 
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import javax.swing.JPanel;
-
 public class Player {
     private int row;
     private int col;
