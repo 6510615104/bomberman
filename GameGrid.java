@@ -30,18 +30,24 @@ public class GameGrid extends JPanel {
     public char[][] map;
 
     public GameGrid(int rows, int cols, int cellSize) {
-        this.rows = rows;
-        this.cols = cols;
-        this.cellSize = cellSize;
-        this.cellColors = new Color[rows][cols];
-        player = new Player(1, 1); // กำหนดตำแหน่งเริ่มต้นให้ Player
-        enemy = new Enemy(map, 1, 3, this); // guaranteed empty tile
-        enemy.start();
-        setPreferredSize(new Dimension(cols * cellSize, rows * cellSize));
+    this.rows = rows;
+    this.cols = cols;
+    this.cellSize = cellSize;
+    this.cellColors = new Color[rows][cols];
 
-        playerImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/static/player.png").getImage();
-        bombImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/static/bomb.gif").getImage();
-        enemyImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/static/pontan.png").getImage();
+    // Initialize the map before creating the enemy
+    initializeMap();
+
+    // Create the player and enemy after the map is initialized
+    player = new Player(1, 1); // Player's initial position
+    enemy = new Enemy(map, 7, 3, this); // Create the enemy at (7, 3) with the initialized map
+    enemy.start(); // Start enemy movement
+    setPreferredSize(new Dimension(cols * cellSize, rows * cellSize));
+
+        playerImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/player.png").getImage();
+        bombImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/bomb.gif").getImage();
+        enemyImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/pontan.png").getImage();
+
         activePowerUps = new ArrayList<>(); // เริ่มต้น List
         initializeMap();
         // เคลียร์พื้นที่รอบผู้เล่นหลังจากสร้างแผนที่
@@ -85,32 +91,38 @@ public class GameGrid extends JPanel {
     }
 
     private void startEnemySpawner() {
-        new Thread(() -> {
-            Random rand = new Random();
-            while (true) {
-                try {
-                    Thread.sleep(10000); // spawn every 5 seconds
+    new Thread(() -> {
+        Random rand = new Random();
+        while (true) {
+            try {
+                Thread.sleep(10000); // Spawn every 10 seconds
 
-                    for (int i = 0; i < 20; i++) { // up to 20 attempts
-                        int r = rand.nextInt(map.length);
-                        int c = rand.nextInt(map[0].length);
-                        if (map[r][c] == ' ') {
-                            Enemy e = new Enemy(map, r, c, this);
-                            e.start();
-                            enemies.add(e);
-                            System.out.println("👾 Spawned enemy at (" + r + "," + c + ")");
-                            break;
-                        }
-                    }
-
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                    break;
+                // Check if there are already 4 enemies on the map
+                if (enemies.size() >= 4) {
+                    System.out.println("❌ Cannot spawn more enemies. Maximum limit reached.");
+                    continue; // Skip spawning if the limit is reached
                 }
+
+                for (int i = 0; i < 4; i++) { // up to 20 attempts
+                    int r = rand.nextInt(map.length);
+                    int c = rand.nextInt(map[0].length);
+                    if (map[r][c] == ' ') {
+                        Enemy e = new Enemy(map, r, c, this);
+                        e.start();
+                        enemies.add(e); // Add the new enemy to the list
+                        System.out.println("👾 Spawned enemy at (" + r + "," + c + ")");
+                        break; // Exit the loop once an enemy is spawned
+                    }
+                }
+
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                break;
             }
-        }).start();
-        setFocusable(true);
-    }
+        }
+    }).start();
+    }   
+
 
     // เมธอดหลักในการอัปเดตสถานะเกม
     private void updateGame() {
