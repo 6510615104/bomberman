@@ -7,85 +7,72 @@ public class Bomb extends Thread {
     private final int row;
     private final int col;
     private final GameGrid grid;
-    private final int explosionRange; // เพิ่มตัวแปรสำหรับรัศมีการระเบิดของผู้เล่น
+    private final int explosionRange; // The range of explosion
 
-    // ✅ Constructor that matches what you call in GameGrid
     public Bomb(char[][] map, int row, int col, GameGrid grid, int explosionRange) {
         this.map = map;
         this.row = row;
         this.col = col;
         this.grid = grid;
-        this.explosionRange = explosionRange; // กำหนดรัศมีระเบิด
+        this.explosionRange = explosionRange; // Set the explosion range
     }
 
     @Override
     public void run() {
         try {
-            Thread.sleep(2000); // Wait before explosion
+            Thread.sleep(2000); // Wait for the bomb to explode
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
-        // ก่อนระเบิด ให้เปลี่ยนสถานะ Bomb จาก 'B' เป็น ' '
-        // เพื่อให้สามารถวางระเบิดใหม่ได้
-        // การทำแบบนี้จะป้องกันการนับ Bomb ที่กำลังจะระเบิดเป็นระเบิดที่ยังอยู่บนแผนที่
-        // แต่ต้องระวัง race condition หากมี player พยายามวางระเบิดซ้ำที่ตำแหน่งเดิม
-        // ซึ่งในโค้ดปัจจุบัน player วางได้แค่บน 'P' หรือ ' '
-        synchronized (grid.map) { // ใช้ synchronized เพื่อป้องกันการเข้าถึง map พร้อมกัน
+        // Clear the bomb from the map before the explosion
+        synchronized (grid.map) {
             if (map[row][col] == 'B') {
-                map[row][col] = ' '; // เคลียร์ระเบิดออกจากแผนที่ก่อนระเบิด
+                map[row][col] = ' '; // Clear the bomb from the map
             }
         }
 
-        // Explode Center (สำคัญมาก ต้องระเบิดตรงกลางก่อน)
-        // map[row][col] = '*'; // ไม่ต้องทำตรงนี้แล้ว เพราะจะทำในลูป
-
-        // ใช้ synchronized รอบการอัปเดตแผนที่ทั้งหมด
-        // เพื่อป้องกัน race conditions หากมีหลายระเบิดระเบิดพร้อมกัน
-        synchronized (grid.map) { // ล็อก map object
-            // ระเบิดตรงกลาง
-            affectTile(row, col);
+        // Start the explosion process
+        synchronized (grid.map) {
+            // Explode in all directions
+            affectTile(row, col); // Explode the center
 
             // Explode UP
-            for (int i = 1; i <= explosionRange; i++) { // ใช้ explosionRange
+            for (int i = 1; i <= explosionRange; i++) {
                 int r = row - i;
-                if (!affectTile(r, col))
-                    break; // ถ้าเจอการหยุด หรือทำลายกล่อง ให้หยุด
+                if (!affectTile(r, col)) break; // Stop if wall or limit reached
             }
 
             // Explode DOWN
-            for (int i = 1; i <= explosionRange; i++) { // ใช้ explosionRange
+            for (int i = 1; i <= explosionRange; i++) {
                 int r = row + i;
-                if (!affectTile(r, col))
-                    break;
+                if (!affectTile(r, col)) break;
             }
 
             // Explode LEFT
-            for (int i = 1; i <= explosionRange; i++) { // ใช้ explosionRange
+            for (int i = 1; i <= explosionRange; i++) {
                 int c = col - i;
-                if (!affectTile(row, c))
-                    break;
+                if (!affectTile(row, c)) break;
             }
 
             // Explode RIGHT
-            for (int i = 1; i <= explosionRange; i++) { // ใช้ explosionRange
+            for (int i = 1; i <= explosionRange; i++) {
                 int c = col + i;
-                if (!affectTile(row, c))
-                    break;
+                if (!affectTile(row, c)) break;
             }
-        } // ปิด synchronized block
+        }
 
-        grid.repaint(); // เรียก repaint ครั้งเดียวหลังการระเบิดทั้งหมด
+        grid.repaint(); // Repaint after the explosion
 
         try {
-            Thread.sleep(1000); // Show explosion
+            Thread.sleep(1000); // Show explosion for 1 second
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
-        // Clear explosions (ใช้ synchronized เหมือนเดิม)
-        synchronized (grid.map) { // ล็อก map object อีกครั้ง
-            clearExplosion(row, col); // Clear center
+        // Clear the explosion marks after displaying
+        synchronized (grid.map) {
+            clearExplosion(row, col);
 
             // Up
             for (int i = 1; i <= explosionRange; i++) {
@@ -103,64 +90,67 @@ public class Bomb extends Thread {
             for (int i = 1; i <= explosionRange; i++) {
                 clearExplosion(row, col + i);
             }
-        } // ปิด synchronized block
+        }
 
         grid.repaint();
     }
 
-    // เมธอดช่วยในการจัดการผลกระทบของระเบิด
+    // This method affects a tile with explosion
     private boolean affectTile(int r, int c) {
-        // ตรวจสอบขอบเขต
         if (r < 0 || r >= map.length || c < 0 || c >= map[0].length) {
-            return false; // ออกนอกแผนที่
+            return false; // Out of bounds
         }
 
         char tile = map[r][c];
-        if (tile == '#') { // กำแพงแข็ง หยุดไฟ
+        if (tile == '#') { // Wall stops the explosion
             return false;
         }
-        if (tile == 'B') { // ถ้าเจอระเบิดอื่น ให้ระเบิดต่อ
-            // ตัวเลือก: อาจจะ trigger ระเบิดลูกนั้นให้ระเบิดทันที หรือแค่ปล่อยให้ไฟผ่านไป
-            // ใน Bomberman ส่วนใหญ่จะระเบิดต่อ
-            // map[r][c] = '*'; // เปลี่ยนเป็นไฟ
-            return true; // ไม่หยุดไฟ, ไฟจะทะลุระเบิดลูกอื่นได้
+        if (tile == 'B') { // If there's another bomb, continue the explosion
+            return true;
         }
-        if (tile == 'X') { // ถ้าเจอ กล่อง
-            map[r][c] = '*'; // ทำลายกล่อง
-            spawnPowerUp(r, c); // สุ่ม Power-up
-            return false; // หยุดไฟที่กล่อง
+        if (tile == 'X') { // If there's a box, destroy it and possibly spawn a power-up
+            map[r][c] = '*'; // Destroy the box
+            spawnPowerUp(r, c); // Optionally spawn a power-up
+            return false; // Stop explosion at the box
         }
-        // ถ้าเป็น ' ' (ช่องว่าง) หรือ '*' (ไฟเดิม)
-        map[r][c] = '*'; // เปลี่ยนเป็นไฟ
-        return true; // ไปต่อ
+
+        // If the tile is empty (' ') or already exploded ('*'), continue explosion
+        map[r][c] = '*'; // Mark the explosion
+        checkAndDestroyEnemy(r, c); // Check for enemy at this position
+        return true; // Continue explosion
     }
 
-    // เมธอดช่วยในการล้างไฟระเบิด
+    // Check and destroy enemy if it is in the explosion area
+    private void checkAndDestroyEnemy(int r, int c) {
+        for (Enemy enemy : grid.getEnemies()) {
+            if (enemy.getRow() == r && enemy.getCol() == c) {
+                enemy.stopEnemy(); // Stop enemy thread
+                grid.getEnemies().remove(enemy); // Remove enemy from the grid
+                System.out.println("💥 Enemy destroyed at (" + r + "," + c + ")");
+                break; // Stop checking further after destroying the first enemy
+            }
+        }
+    }
+
+    // This method clears the explosion marks after a while
     private void clearExplosion(int r, int c) {
         if (r >= 0 && r < map.length && c >= 0 && c < map[0].length) {
             if (map[r][c] == '*') {
                 map[r][c] = ' ';
             }
-            // ตรวจสอบว่ามีผู้เล่นหรือศัตรูอยู่ในตำแหน่งนี้หรือไม่
-            // หากมีและตายแล้ว ไม่ต้องทำอะไร หรือทำ Animation ตาย
-            // ในที่นี้คือแค่ล้างไฟ
         }
     }
 
-    // เมธอดสำหรับสุ่มสร้าง Power-up
+    // Spawn power-ups after destroying a box
     private void spawnPowerUp(int r, int c) {
         Random rand = new Random();
-        // โอกาสที่จะสร้าง Power-up (เช่น 40%)
-        if (rand.nextDouble() < 0.4) {
+        if (rand.nextDouble() < 0.4) { // 40% chance to spawn a power-up
             PowerUpType[] types = PowerUpType.values();
             PowerUpType randomType = types[rand.nextInt(types.length)];
-            // เพิ่ม PowerUp เข้าไปใน List ของ GameGrid
-            // ต้องใช้ synchronized เพื่อป้องกัน race condition
-            // หากมีหลายระเบิดระเบิดพร้อมกัน
-            synchronized (grid.activePowerUps) { // ล็อก activePowerUps object
+            synchronized (grid.activePowerUps) {
                 grid.activePowerUps.add(new PowerUp(r, c, randomType));
             }
-            System.out.println("Spawned Power-up: " + randomType + " at (" + r + "," + c + ")");
+            System.out.println("Power-up spawned at (" + r + "," + c + "): " + randomType);
         }
     }
 }

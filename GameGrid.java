@@ -24,6 +24,7 @@ public class GameGrid extends JPanel {
     private Image playerImage;
     private Image bombImage;
     private Image enemyImage;
+    private List<Enemy> enemies = new ArrayList<>();
     private Enemy enemy;
 
     public char[][] map;
@@ -37,15 +38,46 @@ public class GameGrid extends JPanel {
         enemy = new Enemy(map, 1, 3, this); // guaranteed empty tile
         enemy.start();
         setPreferredSize(new Dimension(cols * cellSize, rows * cellSize));
-        playerImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/static/player.png").getImage();
-        bombImage = new ImageIcon("C:\\Users\\san_p\\working\\cn311\\proj\\Bomberman\\static\\bomb.gif").getImage();
-        enemyImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/static/pontan.png").getImage();
 
-        if (enemyImage == null) {
-            System.out.println("❌ Enemy image failed to load.");
-        } else {
-            System.out.println("✅ Enemy image loaded successfully.");
-        }
+        playerImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/player.png").getImage();
+        bombImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/bomb.gif").getImage();
+        enemyImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/pontan.png").getImage();
+
+         player = new Player(1, 1);
+
+
+        Enemy initialEnemy = new Enemy(map, 7, 3, this);
+        initialEnemy.start();
+        enemies.add(initialEnemy);
+
+        startEnemySpawner();
+    }
+
+    private void startEnemySpawner() {
+        new Thread(() -> {
+            Random rand = new Random();
+            while (true) {
+                try {
+                    Thread.sleep(10000); // spawn every 5 seconds
+
+                    for (int i = 0; i < 20; i++) { // up to 20 attempts
+                        int r = rand.nextInt(map.length);
+                        int c = rand.nextInt(map[0].length);
+                        if (map[r][c] == ' ') {
+                            Enemy e = new Enemy(map, r, c, this);
+                            e.start();
+                            enemies.add(e);
+                            System.out.println("👾 Spawned enemy at (" + r + "," + c + ")");
+                            break;
+                        }
+                    }
+
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    break;
+                }
+            }
+        }).start();
 
         activePowerUps = new ArrayList<>(); // เริ่มต้น List
         initializeMap();
@@ -163,8 +195,9 @@ public class GameGrid extends JPanel {
         g.drawImage(playerImage, player.getCol() * cellSize, player.getRow() * cellSize, cellSize, cellSize, null);
         g.setColor(Color.BLACK);
         g.drawRect(player.getCol() * cellSize, player.getRow() * cellSize, cellSize, cellSize);
-        // Draw enemy image last
-        g.drawImage(enemyImage, enemy.getCol() * cellSize, enemy.getRow() * cellSize, cellSize, cellSize, null);
+        for (Enemy e : enemies) {
+            g.drawImage(enemyImage, e.getCol() * cellSize, e.getRow() * cellSize, cellSize, cellSize, null);
+        }
     }
 
     // อัปเดต placeBomb ให้เรียกใช้ Player object
@@ -313,4 +346,20 @@ public class GameGrid extends JPanel {
             }
         }
     }
+        public Player getPlayer() {
+        return player;
+    }
+
+    public char[][] getMap() {
+        return map;
+    }
+
+    public void refresh() {
+        repaint();
+    }
+
+    public List<Enemy> getEnemies() {
+    return enemies;
+}
+
 }
