@@ -19,19 +19,19 @@ public class Enemy extends Thread {
     @Override
     public void run() {
         while (running) {
-            int[] dRow = {-1, 1, 0, 0}; // up, down, left, right
-            int[] dCol = {0, 0, -1, 1};
+            int[] dRow = { -1, 1, 0, 0 }; // up, down, left, right
+            int[] dCol = { 0, 0, -1, 1 };
 
             int dir = random.nextInt(4);
             int newRow = row + dRow[dir];
             int newCol = col + dCol[dir];
 
-            // Move if the next tile is walkable
-            if (map[newRow][newCol] == ' ') {
-
+            // Move if the next tile is walkable (ช่องว่าง) และไม่เป็นระเบิด
+            if (newRow >= 0 && newRow < map.length && newCol >= 0 && newCol < map[0].length &&
+                    map[newRow][newCol] == ' ') {
                 row = newRow;
                 col = newCol;
-                grid.repaint();
+                // grid.repaint(); // ไม่ต้องเรียก repaint ตรงนี้ เพราะ GameGrid จะเรียกทุกเฟรม
             }
 
             try {
@@ -53,6 +53,5 @@ public class Enemy extends Thread {
 
     public void stopEnemy() {
         running = false;
-        interrupt();
     }
 }

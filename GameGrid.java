@@ -1,9 +1,13 @@
 package Bomberman;
 
 import javax.swing.*;
+
 import java.awt.*;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter; // เพิ่ม import นี้
+import java.awt.event.MouseEvent; // เพิ่ม import นี้
 import java.util.ArrayList;
+import java.util.Collections; // สำหรับ Collections.synchronizedList
 import java.util.List;
 import java.util.Random;
 
@@ -13,51 +17,80 @@ public class GameGrid extends JPanel {
     private int cellSize;
     private Color[][] cellColors;
     private Player player; // สร้าง instance ของ Player แทน
-    private int playerBombCount = 1; // จำนวนระเบิดที่ผู้เล่นวางได้พร้อมกัน
-    private int playerExplosionRange = 2; // รัศมีการระเบิดของผู้เล่น (ปัจจุบันคุณตั้งไว้ที่ 2 ใน Bomb.java)
-    public List<PowerUp> activePowerUps; // รายการ Power-up ที่อยู่บนแผนที่
 
-    // เพิ่ม Timer สำหรับ Game Loop
+    public List<PowerUp> activePowerUps; // รายการ Power-up ที่อยู่บนแผนที่
+    private List<Enemy> enemies; // รายการศัตรู
+
+    private int score; // คะแนนของผู้เล่น
+    // *** เพิ่ม Game State Enum ***
+
+    public enum GameState {
+        MENU,
+        PLAYING,
+        GAME_OVER
+    }
+
+    private GameState currentGameState; // ตัวแปรเก็บสถานะปัจจุบัน
+
     private Timer gameTimer;
     private final int FRAME_RATE = 60; // 60 เฟรมต่อวินาที
+    private final int MAX_ENEMIES = 4; // จำนวนศัตรูสูงสุดที่ต้องการ
+
+    // *** UI-related constants ***
+    private final int UI_HEIGHT = 60; // ความสูงสำหรับ UI ด้านบน
+    private final int MAP_OFFSET_Y = UI_HEIGHT; // Map จะเริ่มวาดหลังจาก UI
 
     private Image playerImage;
     private Image bombImage;
     private Image enemyImage;
-    private List<Enemy> enemies = new ArrayList<>();
-    private Enemy enemy;
+
+    // *** เพิ่ม Image สำหรับ Power-ups ***
+    private Image bombPowerUpImage;
+    private Image explosionPowerUpImage; // ใช้สำหรับ EXPLOSION_RANGE (fire.png)
+    private Image speedPowerUpImage;
 
     public char[][] map;
 
     public GameGrid(int rows, int cols, int cellSize) {
-    this.rows = rows;
-    this.cols = cols;
-    this.cellSize = cellSize;
-    this.cellColors = new Color[rows][cols];
+        this.rows = rows;
+        this.cols = cols;
+        this.cellSize = cellSize;
+        this.cellColors = new Color[rows][cols];
 
-    // Initialize the map before creating the enemy
-    initializeMap();
+        playerImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/images/player.png").getImage();
+        bombImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/images/bomb.gif").getImage();
+        enemyImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/images/enemy.png").getImage();
 
-    // Create the player and enemy after the map is initialized
-    player = new Player(1, 1); // Player's initial position
-    enemy = new Enemy(map, 7, 3, this); // Create the enemy at (7, 3) with the initialized map
-    enemy.start(); // Start enemy movement
-    setPreferredSize(new Dimension(cols * cellSize, rows * cellSize));
+        try {
+            bombPowerUpImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/images/bomb_powerup.png")
+                    .getImage();
+            explosionPowerUpImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/images/fire_powerup.png")
+                    .getImage();
+            speedPowerUpImage = new ImageIcon("C:/Users/san_p/working/cn311/proj/Bomberman/images/speed_powerup.png")
+                    .getImage();
+        } catch (Exception e) {
+            System.err.println("Error loading power-up images: " + e.getMessage());
+            // ตั้งค่าเป็น null หรือใช้รูปภาพ placeholder หากโหลดไม่ได้
+            bombPowerUpImage = null;
+            explosionPowerUpImage = null;
+            speedPowerUpImage = null;
+        }
 
-        playerImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/player.png").getImage();
-        bombImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/bomb.gif").getImage();
-        enemyImage = new ImageIcon("C:/Users/lolma/Desktop/work/project/Bomberman/static/pontan.png").getImage();
+        // Initialize Lists (สำคัญ: ต้องสร้างก่อนนำไปใช้)
+        activePowerUps = Collections.synchronizedList(new ArrayList<>()); // ทำให้ thread-safe
+        enemies = Collections.synchronizedList(new ArrayList<>()); // ทำให้ thread-safe
 
-        activePowerUps = new ArrayList<>(); // เริ่มต้น List
+        // *** กำหนดสถานะเริ่มต้นเป็น MENU ***
+        currentGameState = GameState.MENU;
+        // setPreferredSize(new Dimension(cols * cellSize, rows * cellSize));
         initializeMap();
+        player = new Player(1, 1);
+        score = 0; // คะแนนเริ่มต้น
+
         // เคลียร์พื้นที่รอบผู้เล่นหลังจากสร้างแผนที่
         clearPlayerSpawnArea(player.getRow(), player.getCol(), 1); // เคลียร์ 3x3 รอบผู้เล่น
-
         generateRandomBoxes(30);
-        Enemy initialEnemy = new Enemy(map, 7, 3, this);
-        initialEnemy.start();
-        enemies.add(initialEnemy);
-        startEnemySpawner();
+        spawnEnemies(3);
 
         setFocusable(true); // เพิ่มเพื่อให้รับ KeyEvent ได้
         // ใช้ KeyListener สำหรับการจัดการสถานะการกด/ปล่อยปุ่ม
@@ -83,56 +116,217 @@ public class GameGrid extends JPanel {
                 }
             }
         });
+        // *** เพิ่ม MouseListener สำหรับปุ่ม ***
+        addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int mouseX = e.getX();
+                int mouseY = e.getY();
 
+                if (currentGameState == GameState.MENU) {
+                    // ตำแหน่งปุ่ม Start
+                    int buttonWidth = 150;
+                    int buttonHeight = 50;
+                    int x = (getWidth() - buttonWidth) / 2;
+                    int y = (getHeight() - buttonHeight) / 2;
+
+                    if (mouseX >= x && mouseX <= x + buttonWidth &&
+                            mouseY >= y && mouseY <= y + buttonHeight) {
+                        startGame();
+                    }
+                } else if (currentGameState == GameState.GAME_OVER) {
+                    // ตำแหน่งปุ่ม Retry
+                    int retryButtonWidth = 150;
+                    int retryButtonHeight = 50;
+                    int retryX = (getWidth() - retryButtonWidth) / 2;
+                    int retryY = (getHeight() - retryButtonHeight) / 2 + 60; // ใต้ข้อความ Game Over
+
+                    if (mouseX >= retryX && mouseX <= retryX + retryButtonWidth &&
+                            mouseY >= retryY && mouseY <= retryY + retryButtonHeight) {
+                        startGame(); // Retry คือการเริ่มเกมใหม่
+                    }
+                }
+            }
+        });
+        // กำหนดขนาดของ JPanel ให้เหมาะสมกับ UI และ Map
+        setPreferredSize(new Dimension(cols * cellSize, rows * cellSize + UI_HEIGHT)); // เพิ่มความสูงสำหรับ UI
         // *** สร้างและเริ่ม Game Timer ***
         gameTimer = new Timer(1000 / FRAME_RATE, e -> updateGame()); // Timer จะเรียก updateGame() ทุกๆ 1/FRAME_RATE //
                                                                      // วินาที
         gameTimer.start();
+
     }
 
-    private void startEnemySpawner() {
-    new Thread(() -> {
+    // *** เมธอดใหม่: เริ่มเกม ***
+    private void startGame() {
+        // Reset เกม
+        initializeMap();
+        player = new Player(1, 1); // สร้างผู้เล่นใหม่
+        score = 0;
+        activePowerUps.clear(); // ล้าง Power-up เก่า
+
+        // หยุดและลบศัตรูเก่าทั้งหมด
+        synchronized (enemies) {
+            for (Enemy enemy : enemies) {
+                enemy.stopEnemy();
+            }
+            enemies.clear(); // ล้างรายการศัตรู
+        }
+
+        clearPlayerSpawnArea(player.getRow(), player.getCol(), 1);
+        generateRandomBoxes(30);
+
+        currentGameState = GameState.PLAYING; // เปลี่ยนสถานะเป็นกำลังเล่น
+        System.out.println("Game Started!");
+    }
+
+    private void updateGame() {
+        if (currentGameState != GameState.PLAYING) { // เฉพาะเมื่ออยู่ในโหมดเล่นเท่านั้น
+            repaint(); // ยังคง repaint เพื่อแสดง UI
+            return;
+        }
+
+        updatePlayerMovement();
+        checkEnemyCollision();
+        updatePlayerInvulnerability();
+        manageEnemySpawning();
+        checkAndCollectPowerUp(); // ตรวจสอบและเก็บ Power-up
+
+        if (!player.isAlive()) {
+            setGameOver();
+        }
+
+        repaint();
+    }
+
+    // *** เมธอดสำหรับจัดการการเกิดของศัตรูใหม่ ***
+    private void manageEnemySpawning() {
+        synchronized (enemies) {
+            if (enemies.size() < MAX_ENEMIES) {
+                spawnSingleEnemy(); // สร้างศัตรูเพิ่มทีละตัว
+            }
+        }
+    }
+
+    // เมธอดสำหรับสร้างศัตรู 1 ตัว
+    private void spawnSingleEnemy() {
         Random rand = new Random();
-        while (true) {
-            try {
-                Thread.sleep(10000); // Spawn every 10 seconds
+        int attempts = 0;
+        final int MAX_ATTEMPTS = 50; // จำกัดการลองสุ่ม เพื่อป้องกัน infinite loop
 
-                // Check if there are already 4 enemies on the map
-                if (enemies.size() >= 4) {
-                    System.out.println("❌ Cannot spawn more enemies. Maximum limit reached.");
-                    continue; // Skip spawning if the limit is reached
-                }
+        while (attempts < MAX_ATTEMPTS) {
+            int r = rand.nextInt(rows);
+            int c = rand.nextInt(cols);
 
-                for (int i = 0; i < 4; i++) { // up to 20 attempts
-                    int r = rand.nextInt(map.length);
-                    int c = rand.nextInt(map[0].length);
-                    if (map[r][c] == ' ') {
-                        Enemy e = new Enemy(map, r, c, this);
-                        e.start();
-                        enemies.add(e); // Add the new enemy to the list
-                        System.out.println("👾 Spawned enemy at (" + r + "," + c + ")");
-                        break; // Exit the loop once an enemy is spawned
+            // ตรวจสอบว่าตำแหน่งนั้นเป็นช่องว่าง และไม่ได้อยู่ใกล้ผู้เล่นมากเกินไป
+            if (map[r][c] == ' ' &&
+                    !(r >= player.getRow() - 2 && r <= player.getRow() + 2 && // ไม่ใกล้ผู้เล่น 5x5
+                            c >= player.getCol() - 2 && c <= player.getCol() + 2)) {
+
+                boolean positionOccupied = false;
+                synchronized (enemies) { // ตรวจสอบว่ามีศัตรูตัวอื่นอยู่ที่นั่นหรือไม่
+                    for (Enemy existingEnemy : enemies) {
+                        if (existingEnemy.getRow() == r && existingEnemy.getCol() == c) {
+                            positionOccupied = true;
+                            break;
+                        }
                     }
                 }
 
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-                break;
+                // ตรวจสอบ Power-up
+                synchronized (activePowerUps) {
+                    for (PowerUp pu : activePowerUps) {
+                        if (pu.getRow() == r && pu.getCol() == c) {
+                            positionOccupied = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!positionOccupied) {
+                    Enemy newEnemy = new Enemy(map, r, c, this);
+                    enemies.add(newEnemy);
+                    newEnemy.start(); // เริ่ม thread ของศัตรู
+                    System.out.println("Spawned new enemy at (" + r + "," + c + ")");
+                    return; // ออกจากเมธอดเมื่อวางศัตรูได้แล้ว
+                }
+            }
+            attempts++;
+        }
+        System.out.println("Could not find a valid spawn spot for enemy after " + MAX_ATTEMPTS + " attempts.");
+    }
+
+    // เมธอดสำหรับสร้างศัตรู
+    private void spawnEnemies(int numEnemies) {
+        Random rand = new Random();
+        int enemiesPlaced = 0;
+        while (enemiesPlaced < numEnemies) {
+            int r = rand.nextInt(rows);
+            int c = rand.nextInt(cols);
+
+            // ตรวจสอบว่าตำแหน่งนั้นไม่ใช่กำแพง, ไม่ใช่กล่อง, ไม่ใช่ตำแหน่งผู้เล่น,
+            // และไม่ใช่ตำแหน่งที่ระเบิดจะลง
+            if (map[r][c] == ' ' && !(r == player.getRow() && c == player.getCol())) {
+                boolean validSpawn = true;
+                // ตรวจสอบรอบๆ จุดเกิดผู้เล่นด้วย
+                if (r >= player.getRow() - 1 && r <= player.getRow() + 1 &&
+                        c >= player.getCol() - 1 && c <= player.getCol() + 1) {
+                    validSpawn = false;
+                }
+                // ตรวจสอบว่าไม่มีศัตรูตัวอื่นอยู่ที่นั่น
+                for (Enemy existingEnemy : enemies) {
+                    if (existingEnemy.getRow() == r && existingEnemy.getCol() == c) {
+                        validSpawn = false;
+                        break;
+                    }
+                }
+
+                if (validSpawn) {
+                    Enemy newEnemy = new Enemy(map, r, c, this);
+                    enemies.add(newEnemy);
+                    newEnemy.start(); // เริ่ม thread ของศัตรู
+                    enemiesPlaced++;
+                }
             }
         }
-    }).start();
-    }   
+    }
 
+    // เมธอดสำหรับเข้าถึง List ของศัตรู (ให้ Bomb เข้าถึงได้)
+    public List<Enemy> getEnemies() {
+        return enemies;
+    }
 
-    // เมธอดหลักในการอัปเดตสถานะเกม
-    private void updateGame() {
-        // อัปเดตการเคลื่อนที่ของผู้เล่น (ตามคูลดาวน์)
-        updatePlayerMovement();
+    public void setGameOver() {
+        if (currentGameState == GameState.PLAYING) { // กันไม่ให้เรียกซ้ำ
+            currentGameState = GameState.GAME_OVER;
+            System.out.println("Game Over! Final Score: " + score);
 
-        // สามารถเพิ่ม logic อื่นๆ ที่ต้องอัปเดตในแต่ละเฟรมที่นี่
-        // เช่น อัปเดต AI ของศัตรู, อัปเดต animation, ฯลฯ
+            // ไม่ต้องใช้ JOptionPane.showMessageDialog ตรงนี้แล้ว เพราะจะวาดบน Panel แทน
+        }
+    }
 
-        repaint(); // เรียก repaint เพื่อวาดภาพใหม่ทุกเฟรม
+    private void checkEnemyCollision() {
+        if (player.isInvulnerable()) {
+            return;
+        }
+        synchronized (enemies) {
+            for (Enemy enemy : enemies) {
+                if (player.getRow() == enemy.getRow() && player.getCol() == enemy.getCol()) {
+                    player.takeDamage();
+                    return;
+                }
+            }
+        }
+    }
+
+    private void updatePlayerInvulnerability() {
+        if (player.isInvulnerable()) {
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - player.getInvulnerableStartTime() >= player.getInvulnerabilityDuration()) {
+                player.setInvulnerable(false);
+                System.out.println("Player no longer invulnerable.");
+            }
+        }
     }
 
     public void setCellColor(int row, int col, Color color) {
@@ -164,66 +358,166 @@ public class GameGrid extends JPanel {
         }
     }
 
+    // *** ปรับปรุง paintComponent เพื่อวาด UI และจัดการ Player กระพริบ ***
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
+        // --- วาด UI ด้านบน ---
+        g.setColor(Color.BLACK); // พื้นหลัง UI
+        g.fillRect(0, 0, getWidth(), UI_HEIGHT); // วาดพื้นหลัง UI
 
-        for (int row = 0; row < rows; row++) {
-            for (int col = 0; col < cols; col++) {
-                char tile = map[row][col];
-                switch (tile) {
-                    case '#' -> g.setColor(Color.DARK_GRAY); // Wall
-                    case 'X' -> g.setColor(new Color(160, 82, 45)); // กล่อง (สีไม้)
-                    case 'B' -> {
-                        g.drawImage(bombImage, col * cellSize, row * cellSize, cellSize, cellSize, null);
-                        continue;
-                    } // Bomb
-                    case '*' -> g.setColor(Color.RED); // Explosion
-                    default -> g.setColor(Color.LIGHT_GRAY); // Empty
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Monospaced", Font.BOLD, 18)); // ใช้ Font ที่ใหญ่ขึ้นสำหรับ UI
+
+        // วาด Lives
+        g.drawString("Lives: " + player.getLives(), 20, 30); // x=20, y=30 (กลาง UI_HEIGHT)
+
+        // วาด Score
+        String scoreText = "Score: " + score;
+        FontMetrics fm = g.getFontMetrics();
+        int scoreTextWidth = fm.stringWidth(scoreText);
+        g.drawString(scoreText, (getWidth() - scoreTextWidth) / 2, 30); // กลางหน้าจอ
+
+        // วาด Power-ups (Bombs, Range, Speed)
+        g.drawString("B: " + player.getBombCount(), getWidth() - 150, 30); // ด้านขวา
+        g.drawString("R: " + player.getExplosionRange(), getWidth() - 100, 30);
+        g.drawString("S: " + player.getSpeedLevel(), getWidth() - 50, 30);
+        // --- สิ้นสุดการวาด UI ---
+
+        // --- วาดตาม GameState ---
+        if (currentGameState == GameState.MENU) {
+            drawMenu(g);
+        } else if (currentGameState == GameState.PLAYING || currentGameState == GameState.GAME_OVER) {
+            // วาดแผนที่และวัตถุ (เฉพาะเมื่อเล่นอยู่หรือ Game Over แล้ว)
+            for (int r = 0; r < rows; r++) {
+                for (int c = 0; c < cols; c++) {
+                    switch (map[r][c]) {
+                        case '#':
+                            g.setColor(Color.DARK_GRAY);
+                            break;
+                        case 'X':
+                            g.setColor(new Color(160, 82, 45)); // สีกล่อง
+                            break;
+                        case 'B':
+                            // ภาพระเบิดจะถูกวาดทับทีหลัง ไม่ต้องใส่ g.setColor ตรงนี้
+                            // g.setColor(Color.BLACK); // ไม่ต้องวาดสีพื้นหลัง ถ้าจะใช้รูปภาพ
+                            break;
+                        case '*':
+                            g.setColor(Color.RED); // ไฟระเบิด
+                            break;
+                        case 'P': // สำหรับ Power-up ที่ยังไม่ถูกเก็บ
+                            g.setColor(new Color(255, 200, 0)); // สีเหลืองส้มสำหรับ Power-up
+                            break;
+                        default:
+                            g.setColor(Color.LIGHT_GRAY); // ช่องว่าง
+                    }
+
+                    // วาดพื้นหลังของช่อง (ยกเว้น Bomb เพราะจะวาดรูปทับไปเลย)
+                    if (map[r][c] != 'B') {
+                        g.fillRect(c * cellSize, r * cellSize + MAP_OFFSET_Y, cellSize, cellSize);
+                        g.setColor(Color.BLACK); // ขอบช่อง
+                        g.drawRect(c * cellSize, r * cellSize + MAP_OFFSET_Y, cellSize, cellSize);
+                    }
                 }
+            }
 
-                g.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+            // *** วาด Power-ups ด้วยรูปภาพ ***
+            synchronized (activePowerUps) {
+                for (PowerUp pu : activePowerUps) {
+                    Image powerUpImage = null;
+                    switch (pu.getType()) {
+                        case BOMB_COUNT -> powerUpImage = bombPowerUpImage;
+                        case EXPLOSION_RANGE -> powerUpImage = explosionPowerUpImage;
+                        case SPEED -> powerUpImage = speedPowerUpImage;
+                    }
+                    if (powerUpImage != null) {
+                        g.drawImage(powerUpImage, pu.getCol() * cellSize, pu.getRow() * cellSize + MAP_OFFSET_Y,
+                                cellSize, cellSize, null);
+                    } else {
+                        // ถ้าโหลดรูปภาพไม่สำเร็จ ให้กลับไปวาดเป็นวงกลมสีเดิม
+                        g.setColor(new Color(255, 200, 0));
+                        g.fillOval(pu.getCol() * cellSize + cellSize / 4,
+                                pu.getRow() * cellSize + cellSize / 4 + MAP_OFFSET_Y,
+                                cellSize / 2, cellSize / 2);
+                    }
+                }
+            }
+
+            // วาด Bomb (ใน Map) - วาดทับหลังจากวาดพื้นหลังของช่องแล้ว
+            for (int r = 0; r < rows; r++) {
+                for (int c = 0; c < cols; c++) {
+                    if (map[r][c] == 'B') {
+                        g.drawImage(bombImage, c * cellSize, r * cellSize + MAP_OFFSET_Y, cellSize, cellSize, null);
+                    }
+                }
+            }
+
+            // วาดศัตรู (ใน Map)
+            synchronized (enemies) {
+                for (Enemy enemy : enemies) {
+                    if (enemyImage != null) {
+                        g.drawImage(enemyImage, enemy.getCol() * cellSize, enemy.getRow() * cellSize + MAP_OFFSET_Y,
+                                cellSize, cellSize, null); // + MAP_OFFSET_Y
+                    } else {
+                        g.setColor(Color.RED);
+                        g.fillRect(enemy.getCol() * cellSize, enemy.getRow() * cellSize + MAP_OFFSET_Y, cellSize,
+                                cellSize); // + MAP_OFFSET_Y
+                    }
+                }
+            }
+
+            // วาด Player (ใน Map, พร้อมสถานะกระพริบเมื่ออมตะ)
+            // ต้องเช็ค player != null เพราะตอน GameState.MENU player อาจจะยังไม่ได้สร้าง
+            if (player != null) {
+                if (playerImage != null) {
+                    if (player.isInvulnerable()) {
+                        long currentTime = System.currentTimeMillis();
+                        // ทำให้กระพริบทุก 100ms
+                        if ((currentTime / 100) % 2 == 0) {
+                            g.drawImage(playerImage, player.getCol() * cellSize,
+                                    player.getRow() * cellSize + MAP_OFFSET_Y,
+                                    cellSize, cellSize, null); // + MAP_OFFSET_Y
+                        }
+                    } else {
+                        g.drawImage(playerImage, player.getCol() * cellSize, player.getRow() * cellSize + MAP_OFFSET_Y,
+                                cellSize, cellSize, null); // + MAP_OFFSET_Y
+                    }
+                } else {
+                    g.setColor(Color.WHITE);
+                    g.fillRect(player.getCol() * cellSize, player.getRow() * cellSize + MAP_OFFSET_Y, cellSize,
+                            cellSize); // + MAP_OFFSET_Y
+                }
                 g.setColor(Color.BLACK);
-                g.drawRect(col * cellSize, row * cellSize, cellSize, cellSize);
+                g.drawRect(player.getCol() * cellSize, player.getRow() * cellSize + MAP_OFFSET_Y, cellSize, cellSize); // +
+                                                                                                                       // MAP_OFFSET_Y
             }
         }
-        // วาด Power-ups
-        for (PowerUp pu : activePowerUps) {
-            // คุณสามารถใช้รูปภาพสำหรับ Power-up แต่ละประเภทได้
-            // ตอนนี้ใช้สีเป็นตัวอย่าง
-            switch (pu.getType()) {
-                case BOMB_COUNT -> g.setColor(Color.BLUE);
-                case EXPLOSION_RANGE -> g.setColor(Color.ORANGE);
-                case SPEED -> g.setColor(Color.GREEN);
-            }
-            g.fillOval(pu.getCol() * cellSize + cellSize / 4, pu.getRow() * cellSize + cellSize / 4, cellSize / 2,
-                    cellSize / 2);
-        }
-        g.drawImage(playerImage, player.getCol() * cellSize, player.getRow() * cellSize, cellSize, cellSize, null);
-        g.setColor(Color.BLACK);
-        g.drawRect(player.getCol() * cellSize, player.getRow() * cellSize, cellSize, cellSize);
-        for (Enemy e : enemies) {
-            g.drawImage(enemyImage, e.getCol() * cellSize, e.getRow() * cellSize, cellSize, cellSize, null);
+
+        // ถ้า Game Over ให้แสดงข้อความและปุ่ม Retry/Continue
+        if (currentGameState == GameState.GAME_OVER) {
+            drawGameOverScreen(g);
         }
     }
 
-    // อัปเดต placeBomb ให้เรียกใช้ Player object
-    // ปรับปรุง placeBomb
     public void placeBomb() {
+        // ดึงจำนวนระเบิดที่ผู้เล่นมีจาก Player object
+        int playerMaxBombs = player.getBombCount();
+
         int currentBombsOnMap = 0;
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                if (map[r][c] == 'B') {
-                    currentBombsOnMap++;
+        synchronized (map) { // synchronized map เพื่อตรวจสอบระเบิดอย่างถูกต้อง
+            for (int r = 0; r < rows; r++) {
+                for (int c = 0; c < cols; c++) {
+                    if (map[r][c] == 'B') {
+                        currentBombsOnMap++;
+                    }
                 }
             }
         }
 
-        // ผู้เล่นสามารถวางระเบิดได้ถ้าช่องที่ยืนอยู่เป็นช่องว่าง
-        if (map[player.getRow()][player.getCol()] == ' ' && currentBombsOnMap < playerBombCount) {
+        if (map[player.getRow()][player.getCol()] == ' ' && currentBombsOnMap < playerMaxBombs) {
             map[player.getRow()][player.getCol()] = 'B';
-            // ไม่ต้อง repaint ตรงนี้ เพราะ Game Loop จะเรียก repaint เองทุกเฟรม
-            new Bomb(map, player.getRow(), player.getCol(), this, playerExplosionRange).start();
+            // สร้าง Bomb object ด้วยรัศมีระเบิดของผู้เล่น
+            new Bomb(map, player.getRow(), player.getCol(), this, player.getExplosionRange()).start();
         }
     }
 
@@ -281,7 +575,6 @@ public class GameGrid extends JPanel {
         return false;
     }
 
-    // ปรับปรุง checkAndCollectPowerUp
     private void checkAndCollectPowerUp() {
         PowerUp collectedPowerUp = null;
         synchronized (activePowerUps) {
@@ -295,14 +588,15 @@ public class GameGrid extends JPanel {
             if (collectedPowerUp != null) {
                 activePowerUps.remove(collectedPowerUp);
                 switch (collectedPowerUp.getType()) {
-                    case BOMB_COUNT -> playerBombCount++;
-                    case EXPLOSION_RANGE -> playerExplosionRange++;
-                    case SPEED -> player.decreaseMoveDelay(20); // ลดคูลดาวน์ลง 20ms
+                    case BOMB_COUNT -> player.increaseBombCount(); // อัปเดตที่ Player object
+                    case EXPLOSION_RANGE -> player.increaseExplosionRange(); // อัปเดตที่ Player object
+                    case SPEED -> player.decreaseMoveDelay(20); // ลดคูลดาวน์
                 }
                 System.out.println("Collected Power-up: " + collectedPowerUp.getType() +
-                        ", Bomb Count: " + playerBombCount +
-                        ", Explosion Range: " + playerExplosionRange +
-                        ", Current Move Delay: " + player.getCurrentMoveDelay() + "ms");
+                        ", Bomb Count: " + player.getBombCount() +
+                        ", Explosion Range: " + player.getExplosionRange() +
+                        ", Current Move Delay: " + player.getCurrentMoveDelay() + "ms (Speed Level: "
+                        + player.getSpeedLevel() + ")");
             }
         }
     }
@@ -354,6 +648,16 @@ public class GameGrid extends JPanel {
         }
     }
 
+    // *** เมธอดสำหรับเพิ่มคะแนน ***
+    public void addScore(int points) {
+        this.score += points;
+    }
+
+    // *** เมธอดสำหรับดึงคะแนน ***
+    public int getScore() {
+        return score;
+    }
+
     public Player getPlayer() {
         return player;
     }
@@ -366,8 +670,64 @@ public class GameGrid extends JPanel {
         repaint();
     }
 
-    public List<Enemy> getEnemies() {
-        return enemies;
+    // *** เมธอดสำหรับวาดหน้าจอ Menu ***
+    private void drawMenu(Graphics g) {
+        g.setColor(new Color(0, 0, 0, 200)); // พื้นหลังทึบ
+        g.fillRect(0, 0, getWidth(), getHeight());
+
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Monospaced", Font.BOLD, 60));
+        String title = "BOMBERMAN";
+        FontMetrics fmTitle = g.getFontMetrics();
+        int xTitle = (getWidth() - fmTitle.stringWidth(title)) / 2;
+        int yTitle = getHeight() / 2 - 80;
+        g.drawString(title, xTitle, yTitle);
+
+        // วาดปุ่ม Start
+        drawButton(g, "START", (getWidth() - 150) / 2, (getHeight() - 50) / 2, 150, 50);
+    }
+
+    // *** เมธอดสำหรับวาดหน้าจอ Game Over ***
+    private void drawGameOverScreen(Graphics g) {
+        g.setColor(new Color(0, 0, 0, 200)); // พื้นหลังทึบ
+        g.fillRect(0, 0, getWidth(), getHeight());
+
+        g.setColor(Color.RED);
+        g.setFont(new Font("Monospaced", Font.BOLD, 48));
+        String gameOverText = "GAME OVER!";
+        FontMetrics fmGameOver = g.getFontMetrics();
+        int xGameOver = (getWidth() - fmGameOver.stringWidth(gameOverText)) / 2;
+        int yGameOver = (getHeight() - fmGameOver.getHeight()) / 2 - 40;
+        g.drawString(gameOverText, xGameOver, yGameOver);
+
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Monospaced", Font.BOLD, 24));
+        String finalScoreText = "Final Score: " + score;
+        FontMetrics fmScore = g.getFontMetrics();
+        int xFinalScore = (getWidth() - fmScore.stringWidth(finalScoreText)) / 2;
+        g.drawString(finalScoreText, xFinalScore, yGameOver + 40);
+
+        // วาดปุ่ม Retry
+        drawButton(g, "RETRY", (getWidth() - 150) / 2, (getHeight() - 50) / 2 + 60, 150, 50);
+
+        // คุณสามารถเพิ่มปุ่ม "Continue" ได้ที่นี่ ถ้ามีระบบ lives/credits
+        // For simplicity, Retry will act as a full restart for now.
+    }
+
+    // *** เมธอดช่วยวาดปุ่ม ***
+    private void drawButton(Graphics g, String text, int x, int y, int width, int height) {
+        g.setColor(Color.BLUE); // สีปุ่ม
+        g.fillRect(x, y, width, height);
+
+        g.setColor(Color.WHITE); // สีข้อความบนปุ่ม
+        g.setFont(new Font("Monospaced", Font.BOLD, 24));
+        FontMetrics fm = g.getFontMetrics();
+        int textX = x + (width - fm.stringWidth(text)) / 2;
+        int textY = y + (height - fm.getHeight()) / 2 + fm.getAscent();
+        g.drawString(text, textX, textY);
+
+        g.setColor(Color.BLACK); // ขอบปุ่ม
+        g.drawRect(x, y, width, height);
     }
 
 }
