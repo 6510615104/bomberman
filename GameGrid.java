@@ -6,6 +6,11 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter; // เพิ่ม import นี้
 import java.awt.event.MouseEvent; // เพิ่ม import นี้
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections; // สำหรับ Collections.synchronizedList
 import java.util.List;
@@ -21,6 +26,12 @@ public class GameGrid extends JPanel {
     public List<PowerUp> activePowerUps; // รายการ Power-up ที่อยู่บนแผนที่
     private List<Enemy> enemies; // รายการศัตรู
 
+    // *** เพิ่มส่วนสำหรับ Socket Leaderboard ***
+    private static final String SERVER_IP = "localhost"; // IP Address ของ Server (ถ้าอยู่เครื่องเดียวกันใช้ localhost)
+    private static final int SERVER_PORT = 5000; // Port เดียวกับที่ Leaderboard Server ใช้
+
+    // *** เพิ่มตัวแปรสำหรับชื่อผู้เล่น (อาจจะรับจาก Input หรือกำหนดค่าเริ่มต้น) ***
+    private String playerName = "Player1"; // กำหนดชื่อผู้เล่นเริ่มต้น หรือให้ผู้ใช้ป้อน
     private int score; // คะแนนของผู้เล่น
     // *** เพิ่ม Game State Enum ***
 
@@ -176,8 +187,22 @@ public class GameGrid extends JPanel {
         clearPlayerSpawnArea(player.getRow(), player.getCol(), 1);
         generateRandomBoxes(30);
 
+        // --- ส่วนที่เพิ่มเข้ามาเพื่อรับชื่อผู้เล่น ---
+        playerName = JOptionPane.showInputDialog(this, "Enter your name for the leaderboard:", "Player Name",
+                JOptionPane.QUESTION_MESSAGE);
+        if (playerName == null || playerName.trim().isEmpty()) {
+            playerName = "Player1"; // กำหนดชื่อเริ่มต้นถ้าผู้เล่นยกเลิกหรือป้อนค่าว่าง
+        }
+        // หากคลาส Player ของคุณมีเมธอด setName() คุณสามารถเรียกใช้ได้
+        // player.setName(playerName);
+        // --- สิ้นสุดส่วนที่เพิ่มเข้ามา ---
+
         currentGameState = GameState.PLAYING; // เปลี่ยนสถานะเป็นกำลังเล่น
         System.out.println("Game Started!");
+        System.out.println("Player Name: " + playerName); // แสดงชื่อผู้เล่นเมื่อเกมเริ่ม
+
+        // *** เพิ่มบรรทัดนี้: เริ่ม Timer เกมอีกครั้ง ***
+        gameTimer.start(); // สั่งให้ Game Timer เริ่มทำงาน (เรียก updateGame() ซ้ำๆ)
     }
 
     private void updateGame() {
@@ -297,11 +322,19 @@ public class GameGrid extends JPanel {
     }
 
     public void setGameOver() {
-        if (currentGameState == GameState.PLAYING) { // กันไม่ให้เรียกซ้ำ
+        if (currentGameState != GameState.GAME_OVER) { // ป้องกันการเรียกซ้ำ
             currentGameState = GameState.GAME_OVER;
-            System.out.println("Game Over! Final Score: " + score);
+            gameTimer.stop(); // หยุด game loop
+            System.out.println("GAME OVER! Final Score: " + score);
 
-            // ไม่ต้องใช้ JOptionPane.showMessageDialog ตรงนี้แล้ว เพราะจะวาดบน Panel แทน
+            // *** ส่งคะแนนไปที่ Leaderboard Server ***
+            sendScoreToLeaderboard(playerName, score);
+
+            // *** ดึง Leaderboard มาแสดง ***
+            requestLeaderboard();
+
+            repaint(); // สั่งให้ JPanel วาดใหม่เพื่อแสดงหน้าจอ Game Over และ Leaderboard ที่อัปเดต
+            System.out.println("Game Over! Final Score: " + score);
         }
     }
 
@@ -707,11 +740,22 @@ public class GameGrid extends JPanel {
         int xFinalScore = (getWidth() - fmScore.stringWidth(finalScoreText)) / 2;
         g.drawString(finalScoreText, xFinalScore, yGameOver + 40);
 
-        // วาดปุ่ม Retry
-        drawButton(g, "RETRY", (getWidth() - 150) / 2, (getHeight() - 50) / 2 + 60, 150, 50);
+        // ตำแหน่งและขนาดของปุ่ม Retry
+        int retryButtonWidth = 150;
+        int retryButtonHeight = 50;
+        int retryX = (getWidth() - retryButtonWidth) / 2;
+        int retryY = yGameOver + 40 + fmScore.getHeight() + 20; // วางปุ่มใต้ข้อความคะแนนfinalscoreText และเว้นระยะห่าง
+                                                                // 20
 
-        // คุณสามารถเพิ่มปุ่ม "Continue" ได้ที่นี่ ถ้ามีระบบ lives/credits
-        // For simplicity, Retry will act as a full restart for now.
+        // วาดปุ่ม Retry
+        drawButton(g, "RETRY", retryX, retryY, retryButtonWidth, retryButtonHeight);
+
+        // คำนวณตำแหน่งเริ่มต้น Y สำหรับ Leaderboard
+        // ให้เริ่มจากด้านล่างของปุ่ม Retry และเว้นระยะห่างที่เหมาะสม
+        int leaderboardStartY = retryY + retryButtonHeight + 30; // 30 คือระยะห่างจากปุ่ม
+
+        // *** เพิ่มการแสดง Leaderboard ***
+        drawLeaderboard(g, leaderboardStartY);
     }
 
     // *** เมธอดช่วยวาดปุ่ม ***
@@ -728,6 +772,89 @@ public class GameGrid extends JPanel {
 
         g.setColor(Color.BLACK); // ขอบปุ่ม
         g.drawRect(x, y, width, height);
+    }
+
+    private void sendScoreToLeaderboard(String name, int score) {
+        new Thread(() -> { // รันใน Thread แยกต่างหาก เพื่อไม่ให้บล็อก UI
+            try (Socket socket = new Socket(SERVER_IP, SERVER_PORT);
+                    PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+
+                // ส่งคำสั่ง ADD_SCORE
+                writer.println("ADD_SCORE " + name + " " + score);
+                System.out.println("Sent score to server: " + name + " " + score);
+
+                // Server จะส่ง "OK" กลับมาเมื่อบันทึกสำเร็จ (ถ้ามี) หรือข้อความยืนยัน
+                String response = reader.readLine();
+                System.out.println("Server response (ADD_SCORE): " + response);
+
+            } catch (IOException e) {
+                System.err.println("Error connecting to leaderboard server (ADD_SCORE): " + e.getMessage());
+            }
+        }).start();
+    }
+
+    private void requestLeaderboard() {
+        new Thread(() -> { // รันใน Thread แยกต่างหาก
+            try (Socket socket = new Socket(SERVER_IP, SERVER_PORT);
+                    PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+
+                // ส่งคำสั่ง GET_LEADERBOARD
+                writer.println("GET_LEADERBOARD");
+                System.out.println("Requested leaderboard from server.");
+
+                // รับข้อมูล Leaderboard ทีละบรรทัดจนกว่าจะเจอ "END_LEADERBOARD"
+                List<String> receivedLeaderboard = new ArrayList<>();
+                String line;
+                while ((line = reader.readLine()) != null && !line.equals("END_LEADERBOARD")) {
+                    receivedLeaderboard.add(line);
+                }
+
+                // อัปเดตและแสดงผล Leaderboard บน UI (ต้องรันบน EDT)
+                SwingUtilities.invokeLater(() -> {
+                    updateDisplayedLeaderboard(receivedLeaderboard);
+                });
+
+            } catch (IOException e) {
+                System.err.println("Error connecting to leaderboard server (GET_LEADERBOARD): " + e.getMessage());
+                SwingUtilities.invokeLater(() -> {
+                    // หากเกิดข้อผิดพลาดในการเชื่อมต่อ อาจแสดงข้อความบน UI
+                    updateDisplayedLeaderboard(
+                            Collections.singletonList("Failed to load leaderboard. Server offline?"));
+                });
+            }
+        }).start();
+    }
+
+    private List<String> displayedLeaderboard = new ArrayList<>(); // เก็บ Leaderboard ที่จะแสดงผล
+
+    private void updateDisplayedLeaderboard(List<String> leaderboardData) {
+        this.displayedLeaderboard = leaderboardData;
+        repaint(); // สั่งให้ JPanel วาดใหม่เพื่อแสดง Leaderboard ที่อัปเดต
+    }
+
+    private void drawLeaderboard(Graphics g, int startY) {
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Monospaced", Font.BOLD, 20));
+        String leaderboardTitle = "--- TOP SCORES ---";
+        FontMetrics fm = g.getFontMetrics();
+        int xTitle = (getWidth() - fm.stringWidth(leaderboardTitle)) / 2;
+        g.drawString(leaderboardTitle, xTitle, startY);
+
+        int currentY = startY + fm.getHeight() + 10; // เว้นบรรทัด
+
+        if (displayedLeaderboard.isEmpty()) {
+            String noScores = "No scores yet or loading...";
+            int xNoScores = (getWidth() - fm.stringWidth(noScores)) / 2;
+            g.drawString(noScores, xNoScores, currentY);
+        } else {
+            for (int i = 0; i < displayedLeaderboard.size() && i < 10; i++) { // แสดงสูงสุด 10 อันดับ
+                String entry = (i + 1) + ". " + displayedLeaderboard.get(i);
+                int xEntry = (getWidth() - fm.stringWidth(entry)) / 2;
+                g.drawString(entry, xEntry, currentY + (i * fm.getHeight()));
+            }
+        }
     }
 
 }
